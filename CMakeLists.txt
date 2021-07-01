@@ -2,7 +2,7 @@
 cmake_minimum_required (VERSION 3.8)
 
 # current project
-project ("SimpleRayTracer")
+project ("PathTracer")
 
 # set comiler flags
 # -fopenmp does not work with msvc compiler
@@ -22,10 +22,10 @@ link_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/glm/glm/lib")
 link_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/raytracing/rt/lib")
 
 # compile and link final executable
-add_executable(ray_tracer "main.cpp" "rt_app.cpp")
+add_executable(path_tracer "main.cpp" "rt_app.cpp")
 
 # link external libraries to the executable
-target_link_libraries(ray_tracer
+target_link_libraries(path_tracer
 					  "-fopenmp"
 					  "-lglm_static"
 					  "-lray_tracing_static")
