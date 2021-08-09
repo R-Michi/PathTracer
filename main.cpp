@@ -5,7 +5,15 @@
 
 int main()
 {
-    RayTracerV2 ray_tracer;
-    ray_tracer.run_app();
+    try
+    {
+        PathTracer::init_static();
+        PathTracer ray_tracer;
+        ray_tracer.run_app();
+    }
+    catch (std::exception& e)
+    {
+        std::cout << "[ERROR]: " << e.what() << std::endl;
+    }
     return 0;
 }
