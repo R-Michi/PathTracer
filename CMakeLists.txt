@@ -15,11 +15,11 @@ set(CMAKE_CXX_STANDARD 17)
 # add external include directories
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/glm") 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/stb_master")
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/ray_tracing-1.0.3/include")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/ray_tracing-1.1.0/include")
 
 # add external libraries
 link_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/glm/glm/lib")
-link_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/ray_tracing-1.0.3/lib")
+link_directories("${CMAKE_CURRENT_SOURCE_DIR}/lib/ray_tracing-1.1.0/lib")
 
 # compile and link final executable
 add_executable(path_tracer "main.cpp" "rt_app.cpp" "glc-1.0.0/GL/glc.h")

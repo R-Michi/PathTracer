@@ -86,25 +86,20 @@ private:
     std::atomic_uint32_t rendered_pixel;
     uint64_t* traced_rays;
 
+    static constexpr int SAMPLE_COUNT = 1000;
+    static constexpr float T_MAX = 100.0f;
+    static constexpr int ITERATIONS = 6;
+
     static inline uint32_t n_threads = 0;
     static inline rt::SphericalMap<float, float> environment;
     static inline rt::Texture2D<float, float> brdf_lookup;
     static inline std::vector<rt::Sphere> spheres;
 
-    static inline float sin_lookup[360000];  // 0.001° resolution
-    static inline float cos_lookup[360000];  // 0.001° resolution
-    static inline float asin_lookup[9000];
-
     static void load_textures(void);
     static void load_brdf(void);
     static void load_primitives(void);
-    static void load_lookup(void);
 
-    static inline float fast_sin(float x);
-    static inline float fast_cos(float x);
-    static inline float fast_asin(float x);
-
-    static glm::vec3 compute_direction(float x, float y, float aspect, const glm::vec3& dir, const glm::vec3& up, float fov);
+    static glm::vec3 compute_direction(const glm::vec2& ndc, float aspect, const glm::vec3& dir, const glm::vec3& up, float fov);
     static SampleType generate_sample_type(const Material* mtl, const glm::vec2& noise_seed);
     static void print_rendered_pixel(std::atomic_bool* should_print, std::atomic_uint32_t* px, uint64_t* traced_rays);
 
@@ -116,7 +111,7 @@ private:
     static float noise(glm::vec2 pos);
 
     glm::vec3 ray_generation_shader(uint32_t x, uint32_t y);
-    void closest_hit_shader(const rt::ray_t& ray, int recursion, float t, float t_max, const rt::Primitive* hit, void* ray_payload);
+    void closest_hit_shader(const rt::ray_t& ray, int recursion, float t, float t_max, const rt::Primitive* hit, uint32_t hit_info, void* ray_payload);
     void miss_shader(const rt::ray_t& ray, int recursuon, float t_max, void* ray_payload);
 
 public:
