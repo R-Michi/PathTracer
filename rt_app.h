@@ -101,7 +101,6 @@ private:
 
     // ======================= LOAD METHODS =======================
     static void load_textures(void);
-    static void load_brdf(void);
     static void load_primitives(void);
 
     // ======================= UTILITY METHODS =======================

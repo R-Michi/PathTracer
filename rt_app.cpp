@@ -70,7 +70,6 @@ void PathTracer::init_static(void)
 {
     n_threads = omp_get_max_threads() * 4;
     load_textures();
-    load_brdf();
     load_primitives();
 }
 
@@ -82,65 +81,6 @@ void PathTracer::load_textures(void)
     brdf_lookup.set_filter(rt::RT_FILTER_LINEAR);
     if (rt::TextureLoader::loadf(environment, "../../../assets/skyboxes/environment.hdr", 3) != rt::RT_IMAGE_ERROR_NONE)
         throw std::runtime_error("Failed to load environment.");
-}
-
-void PathTracer::load_brdf(void)
-{
-    rt::ImageCreateInfo image_ci = {};
-    image_ci.width = 512;
-    image_ci.height = 512;
-    image_ci.depth = 1;
-    image_ci.channels = 2;
-
-    glm::vec2* image = new glm::vec2[image_ci.width * image_ci.height];
-
-    omp_set_num_threads(n_threads);
-#pragma omp parallel for
-    for (uint32_t y = 0; y < image_ci.height; y++) // image rows
-    {
-        for (uint32_t x = 0; x < image_ci.width; x++) // image columns
-        {
-            float NdotV = (float)x / (float)image_ci.width;
-            float roughness = (float)y / (float)image_ci.height;
-
-            glm::vec3 v(sqrt(1.0f - NdotV * NdotV), 0.0f, NdotV);
-            float a = 0.0f, b = 0.0f;
-            glm::vec3 n(0.0f, 0.0f, 1.0f);
-
-            constexpr uint32_t sample_count = 1024;
-            for (uint32_t i = 0; i < sample_count; i++)
-            {
-                glm::vec2 xi = Hammersley(i, sample_count);
-                glm::vec3 h = importance_sample_GGX(xi, n, roughness);
-                glm::vec3 l = glm::normalize(2.0f * glm::dot(v, h) * h - v);
-
-                float NdotL = glm::max(l.z, 0.0f);
-                float NdotH = glm::max(h.z, 0.0f);
-                float VdotH = glm::max(glm::dot(v, h), 0.0f);
-
-                if (NdotL > 0.0f)
-                {
-                    float g = geometry_GGX(n, v, l, roughness);
-                    float g_vis = (g * VdotH) / (NdotH * NdotV);
-                    float fc = pow(1.0f - VdotH, 5.0f);
-
-                    a += (1.0f - fc) * g_vis;
-                    b += fc * g_vis;
-                }
-            }
-
-            a /= (float)sample_count;
-            b /= (float)sample_count;
-
-            if (std::isnan(a)) a = 0.0f;
-            if (std::isnan(b)) b = 0.0f;
-
-            image[y * image_ci.width + x] = { a, b };
-        }
-    }
-
-    brdf_lookup.load(image_ci, (float*)image);
-    delete[] image;
 }
 
 void PathTracer::load_primitives(void)
