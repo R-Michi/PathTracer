@@ -57,6 +57,7 @@ public:
 class PathTracer : private rt::RayTracer
 {
 private:
+    // ======================= ENUMS =======================
     enum RayType
     {
         RAY_TYPE_PRIMARY,
@@ -71,47 +72,60 @@ private:
         SAMPLE_TYPE_TRANSPARENCY
     };
 
+    // ======================= STRUCTS =======================
     struct RayPayload
     {
         glm::vec3 emission{ 0.0f };
         glm::vec3 direct_light{ 0.0f };
         glm::vec3 indirect_light{ 0.0f };
         glm::vec3 specular{ 0.0f };
-        float weight{ 1.0f };
         RayType ray_type;
         float t{ 0.0f };
         glm::vec2 noise_coord{ 0.0f };
     };
 
+    // ======================= NON-STATIC MEMBERS =======================
     std::atomic_uint32_t rendered_pixel;
     uint64_t* traced_rays;
 
+    // ======================= CONSTANTS =======================
     static constexpr int SAMPLE_COUNT = 1000;
     static constexpr float T_MAX = 100.0f;
     static constexpr int ITERATIONS = 6;
 
+    // ======================= GLOBAL MEMBERS =======================
     static inline uint32_t n_threads = 0;
     static inline rt::SphericalMap<float, float> environment;
     static inline rt::Texture2D<float, float> brdf_lookup;
     static inline std::vector<rt::Sphere> spheres;
 
+    // ======================= LOAD METHODS =======================
     static void load_textures(void);
     static void load_brdf(void);
     static void load_primitives(void);
 
+    // ======================= UTILITY METHODS =======================
     static glm::vec3 compute_direction(const glm::vec2& ndc, float aspect, const glm::vec3& dir, const glm::vec3& up, float fov);
     static SampleType generate_sample_type(const Material* mtl, const glm::vec2& noise_seed);
     static void print_rendered_pixel(std::atomic_bool* should_print, std::atomic_uint32_t* px, uint64_t* traced_rays);
 
     static glm::vec3 light_sample(const glm::vec2& xi, const glm::vec3& l_direction, float l_distance, float l_radius);
     static glm::vec3 importance_sample_GGX(glm::vec2 Xi, glm::vec3 N, float roughness);
-    static float geometry_sub_GGX(const glm::vec3& n, const glm::vec3& x, float k);
-    static float geometry_GGX(const glm::vec3& n, const glm::vec3& v, const glm::vec3& l, float a);
-    static glm::vec3 fresnel_schlick_roughness(float cos_theta, const glm::vec3& F0, float roughness);
-    static float noise(glm::vec2 pos);
+    static inline float geometry_sub_GGX(const glm::vec3& n, const glm::vec3& x, float k);
+    static inline float geometry_GGX(const glm::vec3& n, const glm::vec3& v, const glm::vec3& l, float roughness);
+    static inline glm::vec3 fresnel_schlick(float cos_theta, const glm::vec3& F0);
+    static inline glm::vec3 fresnel_schlick_inverted(float cos_theta, const glm::vec3& F0, const Material& mtl);
+    static inline float noise(glm::vec2 pos);
 
+    static inline uint32_t float2bits(float f);
+    static inline float bits2float(uint32_t i);
+    static inline float next_float_up(float f);
+    static inline float next_float_down(float f);
+    static inline glm::vec3 offset_ray_origin(const glm::vec3& p, const glm::vec3& n, const glm::vec3& w);
+
+    // ======================= SHADERS =======================
     glm::vec3 ray_generation_shader(uint32_t x, uint32_t y);
-    void closest_hit_shader(const rt::ray_t& ray, int recursion, float t, float t_max, const rt::Primitive* hit, uint32_t hit_info, void* ray_payload);
+    void closest_hit_shader(const rt::ray_t& ray, int recursion, float t, float t_max, const rt::Primitive* hit, rt::RayHitInformation hit_info, void* ray_payload);
     void miss_shader(const rt::ray_t& ray, int recursuon, float t_max, void* ray_payload);
 
 public:
