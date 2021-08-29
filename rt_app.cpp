@@ -32,7 +32,7 @@ glm::vec2 Hammersley(uint32_t i, uint32_t N)
 {
     return glm::vec2((float)i / (float)N, RadicalInverse_VdC(i));
 }
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 PathTracer::PathTracer(void)
 {

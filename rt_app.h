@@ -29,6 +29,7 @@ public:
     {
         *this = mtl;
     }
+
     ~Material(void) {}
 
     Material& operator= (const Material& mtl)
