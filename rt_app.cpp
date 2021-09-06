@@ -1,6 +1,7 @@
 #include "rt_app.h"
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include <omp.h>
 #include <cmath>
 #include <thread>
@@ -17,6 +18,13 @@
 #define M_PI_2_F    1.5707963f
 #define M_2_PI_F    6.2831853f
 #define M_PI_F      3.1415926f
+
+std::string vec3_to_str(const glm::vec3& vec)
+{
+    std::stringstream ss;
+    ss << "X: " << vec.x << "  Y:" << vec.y << "  Z:" << vec.z;
+    return ss.str();
+}
 
 float RadicalInverse_VdC(uint32_t bits)
 {
@@ -125,7 +133,7 @@ PathTracer::SampleType PathTracer::generate_sample_type(const Material* mtl, con
     const float x = noise(noise_seed);
 
     const float th_a = 1.0f - mtl->opacity();
-    const float th_d = (0.5f - (mtl->metallic() / 2.0f)) * mtl->opacity();
+    const float th_d = (0.5f - (mtl->metallic() * 0.5f)) * mtl->opacity();
 
     if (x < th_a)                           return SAMPLE_TYPE_TRANSPARENCY;
     if (x >= th_a && x < (th_a + th_d))     return SAMPLE_TYPE_DIFFUSE;
@@ -184,17 +192,16 @@ glm::vec3 PathTracer::importance_sample_GGX(glm::vec2 Xi, glm::vec3 n, float rou
     return glm::normalize(sampleVec);
 }
 
-inline float PathTracer::geometry_sub_GGX(const glm::vec3& n, const glm::vec3& x, float k)
+inline float PathTracer::geometry_sub_GGX(float cos_theta, float k)
 {
-    const float NdotX = glm::max(glm::dot(n, x), 0.0f);
-    const float denom = NdotX * (1.0f - k) + k;
-    return NdotX / denom;
+    const float denom = cos_theta * (1.0f - k) + k;
+    return cos_theta / denom;
 }
 
-inline float PathTracer::geometry_GGX(const glm::vec3& n, const glm::vec3& v, const glm::vec3& l, float roughness)
+inline float PathTracer::geometry_GGX(float NdotV, float NdotL, float roughness)
 {
     float k = (roughness * roughness) / 2.0f;
-    return geometry_sub_GGX(n, v, k) * geometry_sub_GGX(n, l, k);
+    return geometry_sub_GGX(NdotV, k) * geometry_sub_GGX(NdotL, k);
 }
 
 inline glm::vec3 PathTracer::fresnel_schlick(float cos_theta, const glm::vec3& F0)
@@ -297,6 +304,7 @@ glm::vec3 PathTracer::ray_generation_shader(uint32_t x, uint32_t y)
 
     glm::vec3 irradiance_diffuse(0.0f);
     glm::vec3 irradiance_specular(0.0f);
+    glm::vec3 irradiance_transmission(0.0f);
     glm::vec3 direct_light(0.0f);
     glm::vec3 emission(0.0f);
 
@@ -306,26 +314,28 @@ glm::vec3 PathTracer::ray_generation_shader(uint32_t x, uint32_t y)
         glm::vec2 offset = (i == 0) ? glm::vec2(0.0f) : (Hammersley(i, SAMPLE_COUNT) - 0.5f) / glm::vec2(SCR_WIDTH, SCR_HEIGHT);
         ray.direction = this->compute_direction(glm::vec2(ndc_x, ndc_y)  + offset, SCR_ASPECT, look_at - cam_pos, up, glm::radians(100.0f));
 
-        payload.noise_coord.y = i * (7 * ITERATIONS);
+        payload.noise_coord.y = i * (5 * ITERATIONS);
         this->trace_ray(ray, ITERATIONS, T_MAX, rt::RT_CULL_MASK_NONE, &payload);
         ++this->traced_rays[omp_get_thread_num()];
         miss = (i == 0 && payload.t >= T_MAX);
 
-        emission            += payload.emission;            // emissive properties of the shading point
-        direct_light        += payload.direct_light;        // light that is directly hitting the shading point from all directions
-        irradiance_diffuse  += payload.indirect_light;      // indirect light hitting the shading point from all directions
-        irradiance_specular += payload.specular;            // reflections of the shading point
+        emission                += payload.emission;            // emissive properties of the shading point
+        direct_light            += payload.direct_light;        // light that is directly hitting the shading point from all directions
+        irradiance_diffuse      += payload.indirect_light;      // indirect light hitting the shading point from all directions
+        irradiance_specular     += payload.specular;            // reflections of the shading point
+        irradiance_transmission += payload.transmission;        // transmission of the shading point
     }
     if (!miss)
     {
-        emission            /= SAMPLE_COUNT;
-        irradiance_diffuse  /= SAMPLE_COUNT;
-        direct_light        /= SAMPLE_COUNT;
-        irradiance_specular /= SAMPLE_COUNT;
+        emission                /= SAMPLE_COUNT;
+        irradiance_diffuse      /= SAMPLE_COUNT;
+        direct_light            /= SAMPLE_COUNT;
+        irradiance_specular     /= SAMPLE_COUNT;
+        irradiance_transmission /= SAMPLE_COUNT;
     }
     ++this->rendered_pixel;
 
-    glm::vec3 irradiance = emission + direct_light + irradiance_diffuse + irradiance_specular;
+    glm::vec3 irradiance = emission + direct_light + irradiance_diffuse + irradiance_specular + irradiance_transmission;
     glm::vec3 LDR = irradiance / (irradiance + 1.0f);
     return glm::pow(LDR, glm::vec3(1.0f / 2.2f));
 }
@@ -340,7 +350,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
     --recursion;
 
     const glm::vec3 intersection = ray.origin + t * ray.direction;  // prevent self-intersection
-    const glm::vec3 normal = glm::normalize(intersection - hit_sphere->center());
+    const glm::vec3 normal = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? glm::normalize(intersection - hit_sphere->center()) : glm::normalize(hit_sphere->center() - intersection);
     const glm::vec3 view = -ray.direction;
 
     // emissive properties of the current shading point
@@ -378,8 +388,8 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
         const float light_distance = glm::distance(intersection, light_pos);
 
         // noise coordinates for shadow ray tracing
-        const glm::vec2 s1(0.0f, (recursion - 1) * 7.0f + 0.0f);
-        const glm::vec2 s2(0.0f, (recursion - 1) * 7.0f + 1.0f);
+        const glm::vec2 s1(0.0f, (recursion - 1) * 5.0f + 0.0f);
+        const glm::vec2 s2(0.0f, (recursion - 1) * 5.0f + 1.0f);
 
         payload.ray_type = RAY_TYPE_SHADOW;
         const glm::vec2 xi(noise(payload_in->noise_coord + s1), noise(payload_in->noise_coord + s2));
@@ -391,7 +401,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
         const glm::vec3 h = glm::normalize(view + sample_ray.direction);
         const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
 
-        const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, *mtl);
+        const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, *mtl) * mtl->opacity();
         const glm::vec3 brdf = kd * (mtl->albedo() / M_PI_F);
 
         // Only the incoming emission part is used as all other parts as direct light, indirect light and specular light will not contribute.
@@ -407,43 +417,75 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
     payload = {};
     payload.noise_coord = payload_in->noise_coord;
 
-    const glm::vec2 s3(0.0f, (recursion-1) * 7.0f + 2.0f);
+    const glm::vec2 s3(0.0f, (recursion-1) * 5.0f + 2.0f);
     payload.ray_type = RAY_TYPE_SECONDARY;
     SampleType sample_type = generate_sample_type(mtl, payload_in->noise_coord + s3);
 
-    // outgoing indirect lighting
-    if (sample_type == SAMPLE_TYPE_DIFFUSE)
+    float random = noise(payload_in->noise_coord + s3);
+
+    if (random < 0.5f)
     {
-        // generate cosine-distributed sample on a hemisphere
-        const glm::vec2 s4(0.0f, (recursion-1) * 7.0f + 3.0f);
-        const glm::vec2 s5(0.0f, (recursion-1) * 7.0f + 4.0f);
-        const float theta = acos(sqrt(noise(payload_in->noise_coord + s4)));
-        const float phi = M_2_PI_F * noise(payload_in->noise_coord + s5);
-        glm::vec3 v(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta)); // cosine weighted distribution
+        // outgoing specular lighting (refraction, transmission)
+        if ((2.0f * random) >= mtl->opacity())
+        {
+            float etha = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? 1.0f / 1.5f : 1.5f;   // hardcoded refraction index of glass
 
-        // orientate hemisphere around the normal vector and trace the ray
-        sample_ray.direction = TBN * v;
-        sample_ray.origin = offset_ray_origin(intersection, normal, sample_ray.direction);
-        this->trace_ray(sample_ray, recursion, t_max, rt::RT_CULL_MASK_NONE , &payload);
-        ++this->traced_rays[omp_get_thread_num()];
+            const glm::vec2 s4(0.0f, (recursion - 1) * 5.0f + 3.0f);
+            const glm::vec2 s5(0.0f, (recursion - 1) * 5.0f + 4.0f);
+            const glm::vec2 xi(noise(payload_in->noise_coord + s4), noise(payload_in->noise_coord + s5));
+            const glm::vec3 h = importance_sample_GGX(xi, normal, mtl->roughness());
 
-        const glm::vec3 h = glm::normalize(view + sample_ray.direction);
-        const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
-        
-        const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, *mtl);
-        const glm::vec3 brdf = kd * mtl->albedo();
+            sample_ray.direction = glm::refract(ray.direction, h, etha);
+            sample_ray.origin = offset_ray_origin(intersection, normal, sample_ray.direction);
+            this->trace_ray(sample_ray, recursion, t_max, rt::RT_CULL_MASK_NONE, &payload);
+            ++this->traced_rays[omp_get_thread_num()];
 
-        // indirect light ray may hit the light source directly then the attenutation must be calculated
-        payload.emission *= (1.0f / (1.0f + payload.t));
-        const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular;
-        payload_in->indirect_light = incoming_radiance * brdf;
+            const float NdotL = glm::clamp(glm::dot(-normal, sample_ray.direction), 0.0f, 1.0f);
+            const float NdotV = glm::clamp(glm::dot(normal, view), 0.0f, 1.0f);
+            const float NdotH = glm::clamp(glm::dot(normal, h), 0.0f, 1.0f);
+            const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
+
+            const glm::vec3 F = fresnel_schlick(VdotH, F0);
+            const float G = geometry_GGX(NdotV, NdotL, mtl->roughness());
+            const glm::vec3 btdf = mtl->albedo() * (1.0f - F) * G * VdotH / glm::max(NdotH * NdotV, 0.001f);
+
+            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular + payload.transmission * 2.0f; // compensation
+            payload_in->transmission = incoming_radiance * btdf;
+        }
+        // outgoing indirect lighting
+        else
+        {
+            // generate cosine-distributed sample on a hemisphere
+            const glm::vec2 s4(0.0f, (recursion - 1) * 5.0f + 3.0f);
+            const glm::vec2 s5(0.0f, (recursion - 1) * 5.0f + 4.0f);
+            const float theta = acos(sqrt(noise(payload_in->noise_coord + s4)));
+            const float phi = M_2_PI_F * noise(payload_in->noise_coord + s5);
+            glm::vec3 v(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta)); // cosine weighted distribution
+
+            // orientate hemisphere around the normal vector and trace the ray
+            sample_ray.direction = TBN * v;
+            sample_ray.origin = offset_ray_origin(intersection, normal, sample_ray.direction);
+            this->trace_ray(sample_ray, recursion, t_max, rt::RT_CULL_MASK_NONE, &payload);
+            ++this->traced_rays[omp_get_thread_num()];
+
+            const glm::vec3 h = glm::normalize(view + sample_ray.direction);
+            const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
+
+            const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, *mtl);
+            const glm::vec3 brdf = kd * mtl->albedo();
+
+            // indirect light ray may hit the light source directly then the attenutation must be calculated
+            payload.emission *= (1.0f / (1.0f + payload.t));
+            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular + payload.transmission;
+            payload_in->indirect_light = incoming_radiance * brdf;
+        }
     }
     // outgoing specular lighting (reflection)
-    else if (sample_type == SAMPLE_TYPE_SPECULAR)
+    else
     {
-        const glm::vec2 s6(0.0f, (recursion-1) * 7.0f + 5.0f);
-        const glm::vec2 s7(0.0f, (recursion-1) * 7.0f + 6.0f);
-        const glm::vec2 xi(noise(payload_in->noise_coord + s6), noise(payload_in->noise_coord + s7));
+        const glm::vec2 s4(0.0f, (recursion - 1) * 5.0f + 3.0f);
+        const glm::vec2 s5(0.0f, (recursion - 1) * 5.0f + 4.0f);
+        const glm::vec2 xi(noise(payload_in->noise_coord + s4), noise(payload_in->noise_coord + s5));
         const glm::vec3 h = importance_sample_GGX(xi, normal, mtl->roughness());
         sample_ray.direction = glm::reflect(ray.direction, h);
         sample_ray.origin = offset_ray_origin(intersection, normal, sample_ray.direction);
@@ -460,10 +502,10 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
             const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
 
             const glm::vec3 F = fresnel_schlick(VdotH, F0);
-            const float G = geometry_GGX(normal, view, sample_ray.direction, mtl->roughness());
+            const float G = geometry_GGX(NdotV, NdotL, mtl->roughness());
             const glm::vec3 brdf = F * G * VdotH / glm::max((NdotH * NdotV), 0.001f);
 
-            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular;
+            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular + payload.transmission;
             payload_in->specular = incoming_radiance * brdf;
         }
     }
@@ -475,6 +517,7 @@ void PathTracer::miss_shader(const rt::ray_t& ray, int recursuon, float t_max, v
     const glm::vec3 rd = glm::normalize(ray.direction);
     const glm::vec4 c = environment.sample(glm::vec4(rd.x, rd.y, rd.z, 0.0f));
     payload->indirect_light = c;
+    //payload->indirect_light = glm::vec3(0.1f, 0.1f, 0.1f);
     payload->t = t_max;
 }
 

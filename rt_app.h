@@ -80,6 +80,7 @@ private:
         glm::vec3 direct_light{ 0.0f };
         glm::vec3 indirect_light{ 0.0f };
         glm::vec3 specular{ 0.0f };
+        glm::vec3 transmission{ 0.0f };
         RayType ray_type;
         float t{ 0.0f };
         glm::vec2 noise_coord{ 0.0f };
@@ -111,8 +112,8 @@ private:
 
     static glm::vec3 light_sample(const glm::vec2& xi, const glm::vec3& l_direction, float l_distance, float l_radius);
     static glm::vec3 importance_sample_GGX(glm::vec2 Xi, glm::vec3 N, float roughness);
-    static inline float geometry_sub_GGX(const glm::vec3& n, const glm::vec3& x, float k);
-    static inline float geometry_GGX(const glm::vec3& n, const glm::vec3& v, const glm::vec3& l, float roughness);
+    static inline float geometry_sub_GGX(float cos_theta, float k);
+    static inline float geometry_GGX(float NdotV, float NdotL, float roughness);
     static inline glm::vec3 fresnel_schlick(float cos_theta, const glm::vec3& F0);
     static inline glm::vec3 fresnel_schlick_inverted(float cos_theta, const glm::vec3& F0, const Material& mtl);
     static inline float noise(glm::vec2 pos);
