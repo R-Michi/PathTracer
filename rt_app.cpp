@@ -419,8 +419,6 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
 
     const glm::vec2 s3(0.0f, (recursion-1) * 5.0f + 2.0f);
     payload.ray_type = RAY_TYPE_SECONDARY;
-    SampleType sample_type = generate_sample_type(mtl, payload_in->noise_coord + s3);
-
     float random = noise(payload_in->noise_coord + s3);
 
     if (random < 0.5f)
@@ -428,7 +426,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
         // outgoing specular lighting (refraction, transmission)
         if ((2.0f * random) >= mtl->opacity())
         {
-            float etha = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? 1.0f / 1.5f : 1.5f;   // hardcoded refraction index of glass
+            float etha = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? 1.0f / 1.52f : 1.52f;   // hardcoded refraction index of glass
 
             const glm::vec2 s4(0.0f, (recursion - 1) * 5.0f + 3.0f);
             const glm::vec2 s5(0.0f, (recursion - 1) * 5.0f + 4.0f);
@@ -449,7 +447,8 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
             const float G = geometry_GGX(NdotV, NdotL, mtl->roughness());
             const glm::vec3 btdf = mtl->albedo() * (1.0f - F) * G * VdotH / glm::max(NdotH * NdotV, 0.001f);
 
-            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular + payload.transmission * 2.0f; // compensation
+            // incoming specular and transmission radiance is off by a factor of 2
+            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + 2.0f * (payload.specular + payload.transmission);
             payload_in->transmission = incoming_radiance * btdf;
         }
         // outgoing indirect lighting
@@ -476,7 +475,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
 
             // indirect light ray may hit the light source directly then the attenutation must be calculated
             payload.emission *= (1.0f / (1.0f + payload.t));
-            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular + payload.transmission;
+            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + 2.0f * (payload.specular + payload.transmission);
             payload_in->indirect_light = incoming_radiance * brdf;
         }
     }
@@ -505,7 +504,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
             const float G = geometry_GGX(NdotV, NdotL, mtl->roughness());
             const glm::vec3 brdf = F * G * VdotH / glm::max((NdotH * NdotV), 0.001f);
 
-            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + payload.specular + payload.transmission;
+            const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + 2.0f * (payload.specular + payload.transmission);
             payload_in->specular = incoming_radiance * brdf;
         }
     }
