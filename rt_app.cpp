@@ -67,10 +67,10 @@ PathTracer::PathTracer(void)
 
 PathTracer::~PathTracer(void)
 {
-     const rt::Framebuffer& fbo = this->get_framebuffer();
-     stbi_write_png("../../../output.png", fbo.width(), fbo.height(), 3, fbo.map_rdonly(), fbo.width() * 3 * sizeof(uint8_t));
+    const rt::Framebuffer& fbo = this->get_framebuffer();
+    stbi_write_png("../../../output.png", fbo.width(), fbo.height(), 3, fbo.map_rdonly(), fbo.width() * 3 * sizeof(uint8_t));
 
-     delete[] this->traced_rays;
+    delete[] this->traced_rays;
 }
 
 
@@ -103,12 +103,71 @@ void PathTracer::load_primitives(void)
         float r;
         Material mtl;
 
-        objects >> pos.x >> pos.y >> pos.z >> r;
-        materials >> mtl.albedo().r >> mtl.albedo().g >> mtl.albedo().b 
-                  >> mtl.emission().r >> mtl.emission().g >> mtl.emission().b 
-                  >> mtl.opacity() >> mtl.roughness() >> mtl.metallic();
+        std::string line_obj, line_mtl;
+        std::getline(objects, line_obj);
+        std::getline(materials, line_mtl);
 
-        spheres.push_back(rt::Sphere(pos, r, mtl));
+        bool should_register = true;
+        if (line_obj.size() > 0 && line_obj[0] != '#')
+        {
+            std::stringstream ss(line_obj);
+            ss >> pos.x >> pos.y >> pos.z >> r;
+        }
+        else should_register = false;
+
+        if (line_mtl.size() > 0 && line_mtl[0] != '#' && should_register)
+        {
+            std::stringstream ss(line_mtl);
+            std::string albedo_path, roughness_path, metallic_path, normal_path;
+
+            ss >> mtl.albedo().r >> mtl.albedo().g >> mtl.albedo().b
+                >> mtl.emission().r >> mtl.emission().g >> mtl.emission().b
+                >> mtl.opacity() >> mtl.roughness() >> mtl.metallic() >> mtl.ior()
+                >> albedo_path >> roughness_path >> metallic_path >> normal_path;
+
+            // if albedo map does not exsist, register it -> no duplicates
+            if (albedo_maps.count(albedo_path) == 0 && albedo_path != "-")
+            {
+                std::cout << "[INFO]: Loading albedo map: " << albedo_path << std::endl;
+                rt::ImageError error = rt::TextureLoader::load(albedo_maps[albedo_path], albedo_path, 3);
+                if(error != rt::RT_IMAGE_ERROR_NONE)
+                    throw std::runtime_error("Failed to load texture " + albedo_path);
+                albedo_maps[albedo_path].set_address_mode(rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT);
+            }
+            if (roughness_maps.count(roughness_path) == 0 && roughness_path != "-")
+            {
+                std::cout << "[INFO]: Loading roughness map: " << roughness_path << std::endl;
+                rt::ImageError error = rt::TextureLoader::load(roughness_maps[roughness_path], roughness_path, 3);
+                if (error != rt::RT_IMAGE_ERROR_NONE)
+                    throw std::runtime_error("Failed to load texture " + roughness_path);
+                roughness_maps[roughness_path].set_address_mode(rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT);
+            }
+            if (metallic_maps.count(metallic_path) == 0 && metallic_path != "-")
+            {
+                std::cout << "[INFO]: Loading metallic map: " << metallic_path << std::endl;
+                rt::ImageError error = rt::TextureLoader::load(metallic_maps[metallic_path], metallic_path, 3);
+                if (error != rt::RT_IMAGE_ERROR_NONE)
+                    throw std::runtime_error("Failed to load texture " + metallic_path);
+                metallic_maps[metallic_path].set_address_mode(rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT);
+            }
+            if (normal_maps.count(normal_path) == 0 && normal_path != "-")
+            {
+                std::cout << "[INFO]: Loading normal map: " << normal_path << std::endl;
+                rt::ImageError error = rt::TextureLoader::load(normal_maps[normal_path], normal_path, 3);
+                if (error != rt::RT_IMAGE_ERROR_NONE)
+                    throw std::runtime_error("Failed to load texture " + normal_path);
+                normal_maps[normal_path].set_address_mode(rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT, rt::RT_TEXTURE_ADDRESS_MODE_REPEAT);
+            }
+
+            mtl.albedo_map()    = (albedo_path == "-")      ? nullptr : &albedo_maps[albedo_path];
+            mtl.roughness_map() = (roughness_path == "-")   ? nullptr : &roughness_maps[roughness_path];
+            mtl.metallic_map()  = (metallic_path == "-")    ? nullptr : &metallic_maps[metallic_path];
+            mtl.normal_map()    = (normal_path == "-")      ? nullptr : &normal_maps[normal_path];
+        }
+        else should_register = false;
+
+        if(should_register)
+            spheres.push_back(rt::Sphere(pos, r, mtl));
     }
 }
 
@@ -128,16 +187,11 @@ glm::vec3 PathTracer::compute_direction(const glm::vec2& ndc, float aspect, cons
     return view * glm::normalize(rd);
 }
 
-PathTracer::SampleType PathTracer::generate_sample_type(const Material* mtl, const glm::vec2& noise_seed)
+inline glm::vec4 PathTracer::normal_to_uv(const glm::vec3& n)
 {
-    const float x = noise(noise_seed);
-
-    const float th_a = 1.0f - mtl->opacity();
-    const float th_d = (0.5f - (mtl->metallic() * 0.5f)) * mtl->opacity();
-
-    if (x < th_a)                           return SAMPLE_TYPE_TRANSPARENCY;
-    if (x >= th_a && x < (th_a + th_d))     return SAMPLE_TYPE_DIFFUSE;
-    return SAMPLE_TYPE_SPECULAR;
+    const float u = atan2(n.x, n.z) / M_2_PI_F + 0.5f;
+    const float v = acos(n.y) / M_PI_F;
+    return glm::vec4(u, v, 0.0f, 0.0f);
 }
 
 void PathTracer::print_rendered_pixel(std::atomic_bool* should_print, std::atomic_uint32_t* px, uint64_t* traced_rays)
@@ -209,10 +263,10 @@ inline glm::vec3 PathTracer::fresnel_schlick(float cos_theta, const glm::vec3& F
     return F0 + (1.0f - F0) * powf(1.0f - cos_theta, 5.0f);
 }
 
-inline glm::vec3 PathTracer::fresnel_schlick_inverted(float cos_theta, const glm::vec3& F0, const Material& mtl)
+inline glm::vec3 PathTracer::fresnel_schlick_inverted(float cos_theta, const glm::vec3& F0, float metallic)
 {
     glm::vec3 F_inverted = 1.0f - fresnel_schlick(cos_theta, F0);
-    return F_inverted *= (1.0f - mtl.metallic());
+    return F_inverted *= (1.0f - metallic);
 }
 
 inline float PathTracer::noise(glm::vec2 pos)
@@ -291,7 +345,7 @@ glm::vec3 PathTracer::ray_generation_shader(uint32_t x, uint32_t y)
     float ndc_x = gl::convert::from_pixels_pos_x(x, SCR_WIDTH) + (0.5f / SCR_WIDTH);
     float ndc_y = gl::convert::from_pixels_pos_y(y, SCR_HEIGHT) - (0.5f / SCR_HEIGHT);
 
-    const glm::vec3 cam_pos = glm::vec3(0.0f, 0.0f, 10.0f);
+    const glm::vec3 cam_pos = glm::vec3(0.0f, 0.0f, -5.0f);
     const glm::vec3 look_at(0.0f, 0.0f, 0.0f);
     const glm::vec3 up(0.0f, 1.0f, 0.0f);
 
@@ -350,7 +404,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
     --recursion;
 
     const glm::vec3 intersection = ray.origin + t * ray.direction;  // prevent self-intersection
-    const glm::vec3 normal = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? glm::normalize(intersection - hit_sphere->center()) : glm::normalize(hit_sphere->center() - intersection);
+    const glm::vec3 _normal = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? glm::normalize(intersection - hit_sphere->center()) : glm::normalize(hit_sphere->center() - intersection);
     const glm::vec3 view = -ray.direction;
 
     // emissive properties of the current shading point
@@ -365,7 +419,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
     // matrix to transform a vector from a local space to the world space
     const glm::vec3 up(0.0f, 1.0f, 0.0f);
     glm::mat3 TBN;
-    TBN[2] = glm::normalize(normal);
+    TBN[2] = glm::normalize(_normal);
     TBN[0] = glm::normalize(glm::cross(up, TBN[2]));
     TBN[1] = cross(TBN[2], TBN[0]);
 
@@ -376,9 +430,15 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
     RayPayload payload;
     payload.noise_coord = payload_in->noise_coord;
 
+    // get surface properties
+    const glm::vec3 albedo  = (mtl->albedo_map() == nullptr)    ? mtl->albedo()     : mtl->albedo_map()->sample(PathTracer::normal_to_uv(_normal) * hit_sphere->radius());
+    const float roughness   = (mtl->roughness_map() == nullptr) ? mtl->roughness()  : mtl->roughness_map()->sample(PathTracer::normal_to_uv(_normal) * hit_sphere->radius()).r;
+    const float metallic    = (mtl->metallic_map() == nullptr)  ? mtl->metallic()   : mtl->metallic_map()->sample(PathTracer::normal_to_uv(_normal) * hit_sphere->radius()).r;
+    const glm::vec3 normal  = (mtl->normal_map() == nullptr)    ? _normal           : TBN * glm::normalize(glm::vec3(mtl->normal_map()->sample(PathTracer::normal_to_uv(_normal) * hit_sphere->radius())) * 2.0f - 1.0f);
+
     // base reflectivity
     glm::vec3 F0(0.04f);
-    F0 = glm::mix(F0, mtl->albedo(), mtl->metallic());
+    F0 = glm::mix(F0, albedo, metallic);
 
     // outgoing direct lighting
     {
@@ -401,8 +461,8 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
         const glm::vec3 h = glm::normalize(view + sample_ray.direction);
         const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
 
-        const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, *mtl) * mtl->opacity();
-        const glm::vec3 brdf = kd * (mtl->albedo() / M_PI_F);
+        const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, metallic) * mtl->opacity();
+        const glm::vec3 brdf = kd * (albedo / M_PI_F);
 
         // Only the incoming emission part is used as all other parts as direct light, indirect light and specular light will not contribute.
         payload.emission *= (1.0f / (1.0f + payload.t));
@@ -426,12 +486,12 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
         // outgoing specular lighting (refraction, transmission)
         if ((2.0f * random) >= mtl->opacity())
         {
-            float etha = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? 1.0f / 1.52f : 1.52f;   // hardcoded refraction index of glass
+            float etha = (hit_info & rt::RT_HIT_INFO_FRONT_BIT) ? 1.0f / mtl->ior() : mtl->ior();   // hardcoded refraction index of glass
 
             const glm::vec2 s4(0.0f, (recursion - 1) * 5.0f + 3.0f);
             const glm::vec2 s5(0.0f, (recursion - 1) * 5.0f + 4.0f);
             const glm::vec2 xi(noise(payload_in->noise_coord + s4), noise(payload_in->noise_coord + s5));
-            const glm::vec3 h = importance_sample_GGX(xi, normal, mtl->roughness());
+            const glm::vec3 h = importance_sample_GGX(xi, normal, roughness);
 
             sample_ray.direction = glm::refract(ray.direction, h, etha);
             sample_ray.origin = offset_ray_origin(intersection, normal, sample_ray.direction);
@@ -444,8 +504,8 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
             const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
 
             const glm::vec3 F = fresnel_schlick(VdotH, F0);
-            const float G = geometry_GGX(NdotV, NdotL, mtl->roughness());
-            const glm::vec3 btdf = mtl->albedo() * (1.0f - F) * G * VdotH / glm::max(NdotH * NdotV, 0.001f);
+            const float G = geometry_GGX(NdotV, NdotL, roughness);
+            const glm::vec3 btdf = albedo * (1.0f - F) * G * VdotH / glm::max(NdotH * NdotV, 0.001f);
 
             // incoming specular and transmission radiance is off by a factor of 2
             const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + 2.0f * (payload.specular + payload.transmission);
@@ -470,8 +530,8 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
             const glm::vec3 h = glm::normalize(view + sample_ray.direction);
             const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
 
-            const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, *mtl);
-            const glm::vec3 brdf = kd * mtl->albedo();
+            const glm::vec3 kd = fresnel_schlick_inverted(VdotH, F0, metallic);
+            const glm::vec3 brdf = kd * albedo;
 
             // indirect light ray may hit the light source directly then the attenutation must be calculated
             payload.emission *= (1.0f / (1.0f + payload.t));
@@ -485,7 +545,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
         const glm::vec2 s4(0.0f, (recursion - 1) * 5.0f + 3.0f);
         const glm::vec2 s5(0.0f, (recursion - 1) * 5.0f + 4.0f);
         const glm::vec2 xi(noise(payload_in->noise_coord + s4), noise(payload_in->noise_coord + s5));
-        const glm::vec3 h = importance_sample_GGX(xi, normal, mtl->roughness());
+        const glm::vec3 h = importance_sample_GGX(xi, normal, roughness);
         sample_ray.direction = glm::reflect(ray.direction, h);
         sample_ray.origin = offset_ray_origin(intersection, normal, sample_ray.direction);
 
@@ -501,7 +561,7 @@ void PathTracer::closest_hit_shader(const rt::ray_t& ray, int recursion, float t
             const float VdotH = glm::clamp(glm::dot(view, h), 0.0f, 1.0f);
 
             const glm::vec3 F = fresnel_schlick(VdotH, F0);
-            const float G = geometry_GGX(NdotV, NdotL, mtl->roughness());
+            const float G = geometry_GGX(NdotV, NdotL, roughness);
             const glm::vec3 brdf = F * G * VdotH / glm::max((NdotH * NdotV), 0.001f);
 
             const glm::vec3 incoming_radiance = payload.emission + payload.direct_light + payload.indirect_light + 2.0f * (payload.specular + payload.transmission);

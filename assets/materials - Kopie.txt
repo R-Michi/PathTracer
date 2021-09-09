@@ -1,11 +1,12 @@
-0.7 0.7 0.7 0.0 0.0 0.0 1.0 1.0 0.0
-0.7 0.7 0.7 0.0 0.0 0.0 1.0 1.0 0.0
-0.0 0.7 0.0 0.0 0.0 0.0 1.0 1.0 0.0
-0.7 0.0 0.0 0.0 0.0 0.0 1.0 1.0 0.0
-0.7 0.7 0.7 0.0 0.0 0.0 1.0 1.0 0.0
-1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.8 0.0
-1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.1 0.0
-1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.4 0.8
-1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.1 0.8
-1.0 1.0 1.0 0.0 0.0 0.0 0.0 0.01 0.0
-0.0 0.0 0.0 7.0 7.0 7.0 1.0 1.0 0.0
+# <albedo r> <albedo g> <albedo b> <emission r> <emission g> <emission b> <alpha> <roughness> <metallic> <refraction index> <albedo map> <roughness map> <metal map> <normal map>
+0.7 0.7 0.7 0.0 0.0 0.0 1.0 1.0 0.0 1.0 - - - -
+0.7 0.7 0.7 0.0 0.0 0.0 1.0 1.0 0.0 1.0 - - - -
+0.0 0.7 0.0 0.0 0.0 0.0 1.0 1.0 0.0 1.0 - - - -
+0.7 0.0 0.0 0.0 0.0 0.0 1.0 1.0 0.0 1.0 - - - -
+0.7 0.7 0.7 0.0 0.0 0.0 1.0 1.0 0.0 1.0 - - - -
+1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.8 0.0 1.0 ../../../assets/textures/Metal003/Metal003_4K_Color.png ../../../assets/textures/Metal003/Metal003_4K_Roughness.png ../../../assets/textures/Metal003/Metal003_4K_Metalness.png ../../../assets/textures/Metal003/Metal003_4K_NormalGL.png
+1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.1 0.0 1.0 ../../../assets/textures/Metal003/Metal003_4K_Color.png ../../../assets/textures/Metal003/Metal003_4K_Roughness.png ../../../assets/textures/Metal003/Metal003_4K_Metalness.png ../../../assets/textures/Metal003/Metal003_4K_NormalGL.png
+1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.4 0.8 1.0 ../../../assets/textures/Metal003/Metal003_4K_Color.png ../../../assets/textures/Metal003/Metal003_4K_Roughness.png ../../../assets/textures/Metal003/Metal003_4K_Metalness.png ../../../assets/textures/Metal003/Metal003_4K_NormalGL.png
+1.0 1.0 1.0 0.0 0.0 0.0 1.0 0.1 0.8 1.0 ../../../assets/textures/Metal003/Metal003_4K_Color.png ../../../assets/textures/Metal003/Metal003_4K_Roughness.png ../../../assets/textures/Metal003/Metal003_4K_Metalness.png ../../../assets/textures/Metal003/Metal003_4K_NormalGL.png
+1.0 1.0 1.0 0.0 0.0 0.0 0.0 0.01 0.0 1.52 ../../../assets/textures/Metal003/Metal003_4K_Color.png ../../../assets/textures/Metal003/Metal003_4K_Roughness.png ../../../assets/textures/Metal003/Metal003_4K_Metalness.png ../../../assets/textures/Metal003/Metal003_4K_NormalGL.png
+0.0 0.0 0.0 7.0 7.0 7.0 1.0 1.0 0.0 1.0 ../../../assets/textures/Metal003/Metal003_4K_Color.png ../../../assets/textures/Metal003/Metal003_4K_Roughness.png ../../../assets/textures/Metal003/Metal003_4K_Metalness.png ../../../assets/textures/Metal003/Metal003_4K_NormalGL.png

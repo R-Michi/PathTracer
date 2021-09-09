@@ -5,6 +5,7 @@
 #include <stb/stb_image_write.h>
 #include <random>
 #include <atomic>
+#include <unordered_map>
 
 class Material : public rt::PrimitiveAttribute
 {
@@ -14,15 +15,35 @@ private:
     float _roughness;
     float _metallic;
     float _opacity;
+    float _ior; // index of refraction
+
+    const rt::Texture2D<uint8_t, float>* _albedo_map;
+    const rt::Texture2D<uint8_t, float>* _roughness_map;
+    const rt::Texture2D<uint8_t, float>* _metallic_map;
+    const rt::Texture2D<uint8_t, float>* _normal_map;
 
 public:
-    explicit Material(const glm::vec3& albedo = glm::vec3(0.0f), const glm::vec3& emission = glm::vec3(0.0f), float roughness = 0.0f, float metallic = 0.0f, float opacity = 1.0f)
+    explicit Material(const glm::vec3& albedo = glm::vec3(0.0f), 
+                      const glm::vec3& emission = glm::vec3(0.0f), 
+                      float roughness = 0.0f, 
+                      float metallic = 0.0f, 
+                      float opacity = 1.0f, 
+                      float ior = 1.0f,
+                      const rt::Texture2D<uint8_t, float>* albedo_map = nullptr,
+                      const rt::Texture2D<uint8_t, float>* roughness_map = nullptr,
+                      const rt::Texture2D<uint8_t, float>* metallic_map = nullptr,
+                      const rt::Texture2D<uint8_t, float>* normal_map = nullptr)
     {
         this->_albedo = albedo;
         this->_emission = emission;
         this->_roughness = roughness;
         this->_metallic = metallic;
         this->_opacity = opacity;
+        this->_ior = ior;
+        this->_albedo_map = albedo_map;
+        this->_roughness_map = roughness_map;
+        this->_metallic_map = metallic_map;
+        this->_normal_map = normal_map;
     }
 
     Material(const Material& mtl)
@@ -39,6 +60,11 @@ public:
         this->_roughness = mtl._roughness;
         this->_metallic = mtl._metallic;
         this->_opacity = mtl._opacity;
+        this->_ior = mtl._ior;
+        this->_albedo_map = mtl._albedo_map;
+        this->_roughness_map = mtl._roughness_map;
+        this->_metallic_map = mtl._metallic_map;
+        this->_normal_map = mtl._normal_map;
         return *this;
     }
     virtual rt::PrimitiveAttribute* clone_dynamic(void) const { return new Material(*this); }
@@ -53,6 +79,17 @@ public:
     float               metallic(void)  const noexcept  { return this->_metallic; }
     float&              opacity(void)   noexcept        { return this->_opacity; }
     float               opacity(void)   const noexcept  { return this->_opacity; }
+    float&              ior(void)       noexcept        { return this->_ior; }
+    float               ior(void)       const noexcept  { return this->_ior; }
+
+    const rt::Texture2D<uint8_t, float>*&   albedo_map(void)    noexcept        { return this->_albedo_map; }
+    const rt::Texture2D<uint8_t, float>*    albedo_map(void)    const noexcept  { return this->_albedo_map; }
+    const rt::Texture2D<uint8_t, float>*&   roughness_map(void) noexcept        { return this->_roughness_map; }
+    const rt::Texture2D<uint8_t, float>*    roughness_map(void) const noexcept  { return this->_roughness_map; }
+    const rt::Texture2D<uint8_t, float>*&   metallic_map(void)  noexcept        { return this->_metallic_map; }
+    const rt::Texture2D<uint8_t, float>*    metallic_map(void)  const noexcept  { return this->_metallic_map; }
+    const rt::Texture2D<uint8_t, float>*&   normal_map(void)    noexcept        { return this->_normal_map; }
+    const rt::Texture2D<uint8_t, float>*    normal_map(void)    const noexcept  { return this->_normal_map; }
 };
 
 class PathTracer : private rt::RayTracer
@@ -64,13 +101,6 @@ private:
         RAY_TYPE_PRIMARY,
         RAY_TYPE_SECONDARY,
         RAY_TYPE_SHADOW
-    };
-
-    enum SampleType
-    {
-        SAMPLE_TYPE_DIFFUSE,
-        SAMPLE_TYPE_SPECULAR,
-        SAMPLE_TYPE_TRANSPARENCY
     };
 
     // ======================= STRUCTS =======================
@@ -91,7 +121,7 @@ private:
     uint64_t* traced_rays;
 
     // ======================= CONSTANTS =======================
-    static constexpr int SAMPLE_COUNT = 1000;
+    static constexpr int SAMPLE_COUNT = 10000;
     static constexpr float T_MAX = 100.0f;
     static constexpr int ITERATIONS = 6;
 
@@ -100,6 +130,10 @@ private:
     static inline rt::SphericalMap<float, float> environment;
     static inline rt::Texture2D<float, float> brdf_lookup;
     static inline std::vector<rt::Sphere> spheres;
+    static inline std::unordered_map<std::string, rt::Texture2D<uint8_t, float>> albedo_maps;
+    static inline std::unordered_map<std::string, rt::Texture2D<uint8_t, float>> roughness_maps;
+    static inline std::unordered_map<std::string, rt::Texture2D<uint8_t, float>> metallic_maps;
+    static inline std::unordered_map<std::string, rt::Texture2D<uint8_t, float>> normal_maps;
 
     // ======================= LOAD METHODS =======================
     static void load_textures(void);
@@ -107,7 +141,7 @@ private:
 
     // ======================= UTILITY METHODS =======================
     static glm::vec3 compute_direction(const glm::vec2& ndc, float aspect, const glm::vec3& dir, const glm::vec3& up, float fov);
-    static SampleType generate_sample_type(const Material* mtl, const glm::vec2& noise_seed);
+    static inline glm::vec4 normal_to_uv(const glm::vec3& n);
     static void print_rendered_pixel(std::atomic_bool* should_print, std::atomic_uint32_t* px, uint64_t* traced_rays);
 
     static glm::vec3 light_sample(const glm::vec2& xi, const glm::vec3& l_direction, float l_distance, float l_radius);
@@ -115,7 +149,7 @@ private:
     static inline float geometry_sub_GGX(float cos_theta, float k);
     static inline float geometry_GGX(float NdotV, float NdotL, float roughness);
     static inline glm::vec3 fresnel_schlick(float cos_theta, const glm::vec3& F0);
-    static inline glm::vec3 fresnel_schlick_inverted(float cos_theta, const glm::vec3& F0, const Material& mtl);
+    static inline glm::vec3 fresnel_schlick_inverted(float cos_theta, const glm::vec3& F0, float metallic);
     static inline float noise(glm::vec2 pos);
 
     static inline uint32_t float2bits(float f);
